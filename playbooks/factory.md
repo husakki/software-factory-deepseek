@@ -16,7 +16,7 @@ Deine Umgebung:
 ## Feste Regeln (immer)
 
 1. **Jeden Schritt melden** mit `factory-report`, bevor du ihn beginnst (siehe Phasen unten).
-2. **Nie im Chat fragen.** Kein `AskUserQuestion`, kein Plan-Modus, keine Frage, auf die du wartest. Hier antwortet niemand.
+2. **Nie im Chat fragen.** Keine Rückfrage-Werkzeuge, kein Plan-Modus, keine Frage, auf die du wartest. Hier antwortet niemand.
 3. **Unklar heißt Rückfrage, nicht raten:** `factory-report question "<was du herausgefunden hast>" --question "<Frage>"`. Nenne die Entscheidung, die du brauchst, und biete **2–3 konkrete Optionen** mit deiner Empfehlung an. Danach beendest du die Arbeit.
 4. **Die Spec ist der Vertrag.** `spec.md` schreibt der Mensch. Du änderst sie nie.
 5. **Nie selbst mergen.** Kein `gh pr merge`, kein Auto-Merge, kein Push auf den Standard-Branch.

@@ -94,7 +94,7 @@ Status of the new feature: `Planned`. Increase "Nächste freie ID".
 - [ ] User has reviewed and approved the spec
 
 ## Handoff
-> "Die Spec steht. Commit und Push auf main, dann `/to-factory PROJ-X`, um sie an die Software Factory zu übergeben."
+> "Die Spec steht. Commit und Push auf main, dann den Skill `to-factory` mit PROJ-X aufrufen, um sie an die Software Factory zu übergeben."
 
 ## Git Commit
 ```

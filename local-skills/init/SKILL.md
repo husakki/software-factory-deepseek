@@ -20,7 +20,7 @@ Interview the user until you reach a **complete shared understanding**:
 
 ## Before Starting
 1. Read `docs/briefing.md`. If it contains a real briefing, note what it already answers and ask **only the gaps**. Do not re-ask what the briefing says.
-2. Read `docs/PRD.md`, `docs/stack.md`, `features/INDEX.md`. If the PRD is already filled in (not the template): "Dieses Projekt ist schon initialisiert. Nutze `/write-spec` für das nächste Feature." → Stop.
+2. Read `docs/PRD.md`, `docs/stack.md`, `features/INDEX.md`. If the PRD is already filled in (not the template): "Dieses Projekt ist schon initialisiert. Nutze den Skill `write-spec` für das nächste Feature." → Stop.
 3. Write everything in the language of the briefing / the user (German by default).
 
 ## Interview Phase
@@ -54,7 +54,7 @@ Options: file/link from the user, a short description (colors, fonts, feel), or 
 
 ## Set Up the Project Skeleton
 After the documents are approved:
-1. **Scaffold the stack** with its official generator into the repo root (e.g. `npx create-next-app@latest . --ts --tailwind --eslint --app --src-dir --use-npm --yes`, `uv init`, `composer create-project laravel/laravel .`). Keep the existing `docs/`, `features/`, `.factory/`, `CLAUDE.md`, `README.md`. Set up the test framework from the stack decision with one passing example test.
+1. **Scaffold the stack** with its official generator into the repo root (e.g. `npx create-next-app@latest . --ts --tailwind --eslint --app --src-dir --use-npm --yes`, `uv init`, `composer create-project laravel/laravel .`). Keep the existing `docs/`, `features/`, `.factory/`, `CLAUDE.md`/`AGENTS.md`, `README.md`. Set up the test framework from the stack decision with one passing example test.
 2. **Fill `.factory/setup.json`** for this stack. Every command must work on a fresh Linux machine after `install`:
    ```json
    {
@@ -85,7 +85,7 @@ After the documents are approved:
 - [ ] Backend checklist given to the user if there is a backend
 
 ## Handoff
-> "Projekt steht. Nächster Schritt: `/write-spec PROJ-1` für **[erstes Feature]**. Danach `/to-factory PROJ-1`."
+> "Projekt steht. Nächster Schritt: Skill `write-spec` mit PROJ-1 für **[erstes Feature]**. Danach Skill `to-factory` mit PROJ-1."
 
 ## Git Commit
 ```

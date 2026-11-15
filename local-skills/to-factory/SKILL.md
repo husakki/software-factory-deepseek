@@ -1,9 +1,8 @@
 ---
 name: to-factory
-description: Hand an approved feature spec to the Software Factory by creating a GitHub issue with the factory label that points to the spec. Use after /write-spec, once the spec is committed and pushed.
+description: Hand an approved feature spec to the Software Factory by creating a GitHub issue with the factory label that points to the spec. Use after the write-spec skill, once the spec is committed and pushed.
 argument-hint: "PROJ-X"
 user-invocable: true
-disable-model-invocation: true
 ---
 
 # An die Software Factory übergeben
@@ -12,7 +11,7 @@ disable-model-invocation: true
 
 ## Schritte
 
-1. **Spec finden:** `ls -d features/<PROJ-X>-*/` → darin muss `spec.md` liegen. Gibt es keine, abbrechen: „Für <PROJ-X> gibt es noch keine Spec. Erst `/write-spec`."
+1. **Spec finden:** `ls -d features/<PROJ-X>-*/` → darin muss `spec.md` liegen. Gibt es keine, abbrechen: „Für <PROJ-X> gibt es noch keine Spec. Erst den Skill `write-spec` ausführen."
 
 2. **Prüfen, dass die Spec auf GitHub liegt.** Die Factory liest sie vom Standard-Branch, nicht von deinem Rechner.
    - Standard-Branch: `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`

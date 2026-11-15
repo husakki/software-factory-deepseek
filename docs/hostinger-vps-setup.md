@@ -9,9 +9,9 @@ Schritt für Schritt vom leeren Server bis zum ersten Pull Request, den die Fact
 **Du brauchst:**
 
 - einen Hostinger VPS (empfohlen: **KVM 2** mit 2 CPU-Kernen und 8 GB RAM)
-- ein Claude-Abo (Pro, Max, Team oder Enterprise) **oder** einen Anthropic-API-Key
+- einen DeepSeek-API-Key von [platform.deepseek.com](https://platform.deepseek.com/api_keys) (kein Claude-Abo, kein Anthropic-Key nötig)
 - einen GitHub-Account
-- auf deinem Rechner: [Claude Code](https://code.claude.com), `git` und die [GitHub CLI](https://cli.github.com) (`gh`)
+- auf deinem Rechner: den DeepSeek Harness (`dsh`), `git` und die [GitHub CLI](https://cli.github.com) (`gh`)
 
 ---
 
@@ -20,11 +20,11 @@ Schritt für Schritt vom leeren Server bis zum ersten Pull Request, den die Fact
 1. Geh auf **[hostinger.com/alexclaude](https://hostinger.com/alexclaude)** und wähl den **KVM 2**.
 2. Wähl die Laufzeit. Ich empfehle mindestens 12 Monate; mit 24 Monaten sparst du am meisten. Bei Jahresplänen bekommst du außerdem eine Domain gratis dazu.
 3. Gib im Warenkorb den Code **`ALEXCLAUDE`** ein. Damit sparst du noch einmal 10 % auf den aktuellen Preis.
-4. Bei der Einrichtung im hPanel wählst du als Betriebssystem die Vorlage **Ubuntu 24.04 mit Claude Code**. Lege dabei ein sicheres **Root-Passwort** fest (oder hinterlege direkt deinen SSH-Key).
+4. Bei der Einrichtung im hPanel wählst du als Betriebssystem die Vorlage **Ubuntu 24.04**. Lege dabei ein sicheres **Root-Passwort** fest (oder hinterlege direkt deinen SSH-Key).
 
 Hostinger hat eine 30-Tage-Geld-zurück-Garantie. Falls ein eigener Server doch nichts für dich ist, kannst du ihn innerhalb dieser Zeit zurückgeben.
 
-> Du kannst auch einen anderen Ubuntu-24.04-Server nehmen. Die Anleitung ist auf Hostinger getestet; dort ist Claude Code durch die Vorlage schon installiert.
+> Du kannst auch einen anderen Ubuntu-24.04-Server nehmen. Die Anleitung ist auf Hostinger getestet; Claude Code oder andere Zusatzsoftware muss nicht vorinstalliert sein.
 
 ## 2. Mit dem Server verbinden
 
@@ -44,7 +44,7 @@ Alle Befehle in den Schritten 3 bis 6 führst du **auf dem Server** aus.
 ## 3. Die Factory installieren
 
 ```bash
-git clone https://github.com/AlexPEClub/software-factory.git /opt/software-factory
+git clone https://github.com/husakki/software-factory-deepseek.git /opt/software-factory
 cd /opt/software-factory
 ./setup.sh
 ```
@@ -55,35 +55,21 @@ Das Skript installiert Docker, die GitHub CLI und Bun, legt die Konfiguration un
 
 Am Ende listet es auf, was noch fehlt. Das sind die nächsten drei Schritte. Du kannst `./setup.sh` jederzeit erneut ausführen; schon Installiertes wird übersprungen.
 
-## 4. Claude anmelden
+## 4. DeepSeek-Key hinterlegen
 
-Die Factory nutzt die offizielle Claude Code CLI mit deinem eigenen Login.
+Die Factory startet den **DeepSeek Harness (DSH)** im Headless-Modus; das Modell kommt von der DeepSeek-API. Du brauchst nur einen API-Key von [platform.deepseek.com](https://platform.deepseek.com/api_keys) — kein Claude-Abo, kein Anthropic-Konto.
 
-**Variante A: dein Claude-Abo.** Führe **auf deinem Rechner** (nicht auf dem Server) aus:
-
-```bash
-claude setup-token
-```
-
-Du meldest dich im Browser an und bekommst einen langen Token, der mit `sk-ant-oat` beginnt. Diesen Weg dokumentiert Anthropic für Skripte und Automatisierung.
-
-Dann **auf dem Server** speichern, ohne dass der Token im Verlauf landet. Füge den Token ein, drück **Enter** und dann **Strg+D**:
+Speichere den Key **auf dem Server**, ohne dass er im Shell-Verlauf landet. Füge ihn ein, drück **Enter** und dann **Strg+D**:
 
 ```bash
-stty -echo; printf "Token einfügen, dann Enter und Strg+D: "; T=$(cat | tr -d '[:space:]'); stty echo; echo; printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$T" > /etc/software-factory/secrets.env && chmod 600 /etc/software-factory/secrets.env && unset T && awk -F= '{print length($2) " Zeichen"}' /etc/software-factory/secrets.env
+stty -echo; printf "DeepSeek-API-Key einfügen, dann Enter und Strg+D: "; K=$(cat | tr -d '[:space:]'); stty echo; echo; printf 'DEEPSEEK_API_KEY=%s\n' "$K" > /etc/software-factory/secrets.env && chmod 600 /etc/software-factory/secrets.env && unset K && awk -F= '{print length($2) " Zeichen"}' /etc/software-factory/secrets.env
 ```
 
-Der Befehl zeigt am Ende die Länge des Tokens. Sie sollte deutlich über 100 Zeichen liegen. Das Terminal bricht den langen Token oft auf zwei Zeilen um; der Befehl liest deshalb bis Strg+D und entfernt Zeilenumbrüche. Ist die Zahl trotzdem viel kleiner, wiederhol ihn einfach.
+Der Befehl zeigt am Ende die Länge des Keys. DeepSeek-Keys beginnen mit `sk-`; das Terminal bricht lange Keys oft auf zwei Zeilen um, deshalb liest der Befehl bis Strg+D und entfernt Zeilenumbrüche.
 
-**Wichtig zu den Limits:** Die Factory verbraucht dieselben Nutzungslimits wie deine normale Arbeit mit Claude. Wenn sie nachts entwickelt, hast du morgens entsprechend weniger übrig.
+**Abrechnung:** nach Verbrauch (Pay-as-you-go). Starte mit `maxParallel: 1–2`; mehr parallele Läufe kosten entsprechend mehr. Modell: `deepseek-flash` (Standard), optional `deepseek-v4-pro`.
 
-**Variante B: API-Key.** Für Teams oder wenn du die Factory als Dienst für andere betreibst, nimm einen Anthropic-API-Key aus der [Console](https://console.anthropic.com). Abgerechnet wird dann nach Verbrauch:
-
-```bash
-stty -echo; printf "API-Key einfügen, dann Enter und Strg+D: "; K=$(cat | tr -d '[:space:]'); stty echo; echo; printf 'ANTHROPIC_API_KEY=%s\n' "$K" > /etc/software-factory/secrets.env && chmod 600 /etc/software-factory/secrets.env && unset K && echo "gespeichert"
-```
-
-Mehr dazu: [Authentication](https://code.claude.com/docs/en/authentication) und [Legal and Compliance](https://code.claude.com/docs/en/legal-and-compliance) in der Claude-Code-Doku. Anthropic kann die Regeln ändern; prüf die Doku, bevor du startest.
+**Wenn der Key fehlt oder ungültig ist:** Der Runner startet nicht (`config:error … DEEPSEEK_API_KEY ist nicht gesetzt`) bzw. die Läufe enden mit einem Auth-Fehler im Issue. Neuen Key hinterlegen, dann `systemctl restart software-factory`.
 
 ## 5. GitHub anmelden
 
@@ -130,23 +116,23 @@ Ohne Domain funktioniert die Vorschau auch, dann aber nur über einfaches HTTP m
 
 ## 7. Deinen Rechner vorbereiten
 
-Ab hier arbeitest du **auf deinem Rechner**. Die Specs schreibst du lokal mit Claude Code; die Factory bekommt nur das fertige Ergebnis.
+Ab hier arbeitest du **auf deinem Rechner**. Die Specs schreibst du lokal mit DSH; die Factory bekommt nur das fertige Ergebnis.
 
 Klone das Factory-Repo auch lokal und installiere die drei lokalen Skills:
 
 ```bash
-git clone https://github.com/AlexPEClub/software-factory.git
-cd software-factory
+git clone https://github.com/husakki/software-factory-deepseek.git
+cd software-factory-deepseek
 ./scripts/install-local-skills.sh
 ```
 
-Danach hast du in jedem Projekt diese Befehle in Claude Code (eine laufende Claude-Code-Sitzung vorher neu starten):
+Danach hast du in jeder DSH-Sitzung diese Skills (im Chat aufrufen, z. B. „nutze den Skill write-spec“):
 
-- `/init`: richtet ein Projekt ein (Produktbeschreibung, Stack, Design, Feature-Liste)
-- `/write-spec`: erarbeitet mit dir im Interview die Spezifikation für ein Feature
-- `/to-factory`: übergibt eine fertige Spec als GitHub Issue an die Factory
+- `init`: richtet ein Projekt ein (Produktbeschreibung, Stack, Design, Feature-Liste)
+- `write-spec`: erarbeitet mit dir im Interview die Spezifikation für ein Feature
+- `to-factory`: übergibt eine fertige Spec als GitHub Issue an die Factory
 
-Die Skills sind Verknüpfungen auf diesen Ordner. Updates holst du dir mit `git pull` darin. **Verschieb oder lösch den Ordner danach nicht**, sonst findet Claude Code die Skills nicht mehr. Hast du ihn doch verschoben, führ `./scripts/install-local-skills.sh` am neuen Ort einfach noch einmal aus.
+Die Skills sind Verknüpfungen auf diesen Ordner. Updates holst du dir mit `git pull` darin. **Verschieb oder lösch den Ordner danach nicht**, sonst findet DSH die Skills nicht mehr. Hast du ihn doch verschoben, führ `./scripts/install-local-skills.sh` am neuen Ort einfach noch einmal aus.
 
 ## 8. Ein Projekt anbinden
 
@@ -172,7 +158,7 @@ Das Skript erledigt drei Dinge auf einmal:
 Dann im neuen Projektordner:
 
 1. Leg eine kurze Projektbeschreibung als `docs/briefing.md` ab: Was soll entstehen, für wen, was ist wichtig?
-2. Starte Claude Code und führe `/init` aus. Claude stellt dir Fragen und legt daraus Produktbeschreibung, Stack, Design-Vorgaben und die Feature-Liste an, inklusive `.factory/setup.json` mit den Befehlen für Installation, Start und Prüfungen.
+2. Starte DSH (`dsh web`) und führe den Skill `init` aus. Der Agent stellt dir Fragen und legt daraus Produktbeschreibung, Stack, Design-Vorgaben und die Feature-Liste an, inklusive `.factory/setup.json` mit den Befehlen für Installation, Start und Prüfungen.
 3. Prüf das Ergebnis und push es.
 
 ### Bestehendes Repo
@@ -184,16 +170,16 @@ cd /opt/software-factory
 ./scripts/add-repo.sh dein-github-name/dein-repo
 ```
 
-Führ danach im Projekt auf deinem Rechner ebenfalls `/init` aus, damit die Factory Stack und Prüfbefehle kennt.
+Führ danach im Projekt auf deinem Rechner ebenfalls den Skill `init` aus, damit die Factory Stack und Prüfbefehle kennt.
 
 Für jedes weitere Projekt wiederholst du einfach einen der beiden Wege. Alle Repos landen auf demselben Board; einen Neustart der Factory brauchst du nicht.
 
 ## 9. Die erste Aufgabe übergeben
 
-1. In Claude Code: `/write-spec`. Claude arbeitet die Spec im Interview mit dir aus und legt sie unter `features/PROJ-1-name/spec.md` ab.
+1. In DSH: Skill `write-spec`. Der Agent arbeitet die Spec im Interview mit dir aus und legt sie unter `features/PROJ-1-name/spec.md` ab.
 2. Lies die Spec durch. **Die Spec ist der Vertrag:** Die Factory entwickelt genau das, was drinsteht, und ändert sie nie.
 3. Commit und push.
-4. `/to-factory`. Das legt ein GitHub Issue mit dem Label `factory` an, das auf die Spec zeigt.
+4. Skill `to-factory`. Das legt ein GitHub Issue mit dem Label `factory` an, das auf die Spec zeigt.
 
 Innerhalb einer Minute übernimmt die Factory. Den Fortschritt siehst du auf dem Board:
 
@@ -224,7 +210,7 @@ Im Pull Request findest du, was umgesetzt wurde, jedes Akzeptanzkriterium mit Er
 jq -r .preview.password /etc/software-factory/config.json
 ```
 
-Standardmäßig läuft eine Vorschau gleichzeitig (`preview.max`). Nach Merge oder Schließen des Pull Requests wird sie entfernt. Die Vorschau bekommt keine Zugangsdaten: Der Code der App kann weder auf GitHub noch auf Claude zugreifen.
+Standardmäßig läuft eine Vorschau gleichzeitig (`preview.max`). Nach Merge oder Schließen des Pull Requests wird sie entfernt. Die Vorschau bekommt keine Zugangsdaten: Der Code der App kann weder auf GitHub noch auf DeepSeek zugreifen.
 
 > Ohne Domain läuft die Vorschau über einfaches HTTP. Das Passwort hält Zufallsbesucher fern, wird aber unverschlüsselt übertragen. Richte deshalb am besten HTTPS ein (Schritt 6b) und zeig über die Vorschau keine echten Kundendaten.
 
@@ -265,7 +251,7 @@ Die Konfiguration liegt in `/etc/software-factory/config.json`. Die wichtigsten 
 | Feld | Standard | Bedeutung |
 |---|---|---|
 | `maxParallel` | `2` | Wie viele Agent-Läufe gleichzeitig laufen (Prüfung, Entwicklung, Abnahme, Verbesserung), über alle Repos zusammen |
-| `model` | `opus` | Modell für alle Agents |
+| `model` | `deepseek-flash` | Modell für alle Agents (`deepseek-v4-pro` für mehr Leistung) |
 | `jobTimeoutMinutes` | `90` | Danach wird ein Lauf abgebrochen |
 | `containerMemory` | `3g` | Arbeitsspeicher pro Agent-Container |
 | `preview.max` | `1` | Gleichzeitige Vorschauen |
@@ -275,7 +261,7 @@ Die Konfiguration liegt in `/etc/software-factory/config.json`. Die wichtigsten 
 
 Nach Änderungen: `systemctl restart software-factory`.
 
-Der Standard `maxParallel: 2` passt zum KVM 2: zwei Läufe mit je bis zu 3 GB plus eine Vorschau. Mehr Parallelität braucht mehr Arbeitsspeicher und verbraucht vor allem schneller deine Claude-Limits. Mit einem Pro-Abo ist `1` die sicherere Wahl.
+Der Standard `maxParallel: 2` passt zum KVM 2: zwei Läufe mit je bis zu 3 GB plus eine Vorschau. Mehr Parallelität braucht mehr Arbeitsspeicher und kostet entsprechend mehr DeepSeek-Tokens. Mit `deepseek-v4-pro` ist `1` die sicherere Wahl.
 
 ## 13. Absichern
 
@@ -297,13 +283,14 @@ Der Standard `maxParallel: 2` passt zum KVM 2: zwei Läufe mit je bis zu 3 GB pl
 
 | Problem | Lösung |
 |---|---|
-| Nichts passiert nach `/to-factory` | `journalctl -u software-factory -f` ansehen. Hat das Issue das Label `factory`? Ist das Repo mit `add-repo.sh` angebunden? |
-| `config:error … Weder CLAUDE_CODE_OAUTH_TOKEN noch ANTHROPIC_API_KEY` | Schritt 4 wiederholen, dann `systemctl restart software-factory` |
-| Beim Token-Einfügen landet ein Teil als Befehl in der Shell | Der Token wurde umgebrochen. `history -c` ausführen (löscht den Rest aus dem Verlauf), dann Schritt 4 mit Strg+D wiederholen |
+| Nichts passiert nach `to-factory` | `journalctl -u software-factory -f` ansehen. Hat das Issue das Label `factory`? Ist das Repo mit `add-repo.sh` angebunden? |
+| `config:error … DEEPSEEK_API_KEY ist nicht gesetzt` | Schritt 4 wiederholen, dann `systemctl restart software-factory` |
+| Beim Key-Einfügen landet ein Teil als Befehl in der Shell | Der Key wurde umgebrochen. `history -c` ausführen (löscht den Rest aus dem Verlauf), dann Schritt 4 mit Strg+D wiederholen |
 | `board:error` in den Logs | `gh auth refresh -s project`, dann `systemctl restart software-factory` |
 | Status **Fehlgeschlagen** | Der Fehler steht als Kommentar im Issue. Ursache beheben, dann im Issue kommentieren |
 | Vorschau lädt nicht | Nach jedem neuen Stand braucht sie 1–2 Minuten. Ist schon eine Vorschau aktiv (`preview.max`), bekommt der PR keine weitere. Mit Domain: Zeigt die Subdomain auf den Server und sind Port 80 und 443 offen? |
-| Claude-Limit erreicht | Die Läufe schlagen fehl, bis dein Limit zurückgesetzt ist. `maxParallel` senken oder auf API-Key umsteigen |
+| DeepSeek-Rate-Limit oder Guthaben leer | Die Läufe schlagen fehl, bis das Limit zurückgesetzt oder Guthaben aufgeladen ist. `maxParallel` senken |
+| `sandbox: file access denied` im Lauf | Der Agent wollte außerhalb von `/work` schreiben. Pfad im Job korrigieren; nicht pauschal auf `danger-full-access` umstellen |
 | Neue Version der Factory holen | `factory-rollout` |
 
 ## Was die Factory nie tut
