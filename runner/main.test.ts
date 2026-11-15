@@ -14,7 +14,7 @@ import {
 
 const tmp = () => mkdtempSync(join(tmpdir(), "sf-test-"));
 const cfg = (extra: Partial<Config> = {}): Config => ({
-  repos: [], label: "factory", maxParallel: 1, model: "opus", workflow: "starter-kit", pollSeconds: 60,
+  repos: [], label: "factory", maxParallel: 1, model: "deepseek-flash", workflow: "starter-kit", pollSeconds: 60,
   jobTimeoutMinutes: 90, image: "x", dataDir: tmp(), containerMemory: "3g", maxReworks: 2, ...extra,
 });
 const c = (login: string, body: string) => ({ author: { login }, body, createdAt: "2026-11-11T10:00:00Z" });
@@ -31,8 +31,8 @@ test("readJobFile liest normale Dateien", () => {
 test("readJobFile folgt keinem Symlink auf Server-Dateien", () => {
   const d = tmp();
   writeFileSync(join(d, "geheim.txt"), "TOKEN=abc");
-  symlinkSync(join(d, "geheim.txt"), join(d, "claude.err"));
-  assert.equal(readJobFile(join(d, "claude.err")), null);
+  symlinkSync(join(d, "geheim.txt"), join(d, "agent.err"));
+  assert.equal(readJobFile(join(d, "agent.err")), null);
 });
 
 test("readJobFile ignoriert Pipes und liest bei großen Dateien nur das Ende", () => {
@@ -177,34 +177,35 @@ async function finishRun(phase: "check" | "build" | "accept", files: Record<stri
   const failedComment = calls.find((x) => x.cmd[1] === "issue" && x.cmd[2] === "comment")?.stdin ?? "";
   return { metric, failedComment, dir };
 }
-const result = (extra = {}) => JSON.stringify({ type: "result", result: "fertig", num_turns: 3, ...extra }) + "\n";
+const result = (extra: Record<string, unknown> = {}) =>
+  JSON.stringify({ type: "final", text: "fertig", sessionId: "s", reason: { kind: "completed" }, ...extra }) + "\n";
 
 test("Bau ohne Prüfergebnis gilt nicht als gebaut", async () => {
-  const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "claude.jsonl": result() });
+  const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "agent.jsonl": result() });
   assert.equal(r.metric.status, "failed");
   assert.ok(r.failedComment.includes("Pflicht-Checks"));
 });
 
 test("Bau mit grünen Checks auf einem älteren Commit gilt nicht als gebaut", async () => {
   const verify = JSON.stringify({ sha: "0000000", ok: true, results: [{ name: "lint", exit: 0 }] });
-  const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "claude.jsonl": result() });
+  const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "agent.jsonl": result() });
   assert.equal(r.metric.status, "failed");
 });
 
 test("Bau mit grünen Checks auf dem gepushten Commit geht in die Abnahme", async () => {
   const verify = JSON.stringify({ sha: headSha, ok: true, results: [{ name: "lint", exit: 0 }] });
-  const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "claude.jsonl": result() });
+  const r = await finishRun("build", { "status.json": '{"status":"accepting","pr":"https://x/pull/1"}', "verify.json": verify, "agent.jsonl": result() });
   assert.equal(r.metric.status, "accepting");
   assert.equal(r.failedComment, "");
 });
 
-test("Abnahme mit gemeldetem Erfolg, aber CLI-Fehler zählt als Fehlschlag", async () => {
-  const r = await finishRun("accept", { "status.json": '{"status":"review"}', "claude.jsonl": result({ is_error: true }) }, 1);
+test("Abnahme mit gemeldetem Erfolg, aber Harness-Fehler zählt als Fehlschlag", async () => {
+  const r = await finishRun("accept", { "status.json": '{"status":"review"}', "agent.jsonl": result({ reason: { kind: "error" } }) }, 1);
   assert.equal(r.metric.status, "failed");
 });
 
 test("Nicht bestandene letzte Abnahme wird nicht als bestanden gezählt", async () => {
-  const r = await finishRun("accept", { "status.json": '{"status":"review","unresolved":true}', "claude.jsonl": result() });
+  const r = await finishRun("accept", { "status.json": '{"status":"review","unresolved":true}', "agent.jsonl": result() });
   assert.equal(r.metric.status, "unresolved");
 });
 
@@ -217,14 +218,16 @@ test("Zeitüberschreitung wird als Fehlschlag mit Grund erfasst", async () => {
 test("Fehlerkommentar enthält keine Server-Dateien und keine Tokens", async () => {
   const config = cfg();
   const secret = join(config.dataDir, "secrets.env");
-  writeFileSync(secret, "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-GEHEIM");
+  writeFileSync(secret, "DEEPSEEK_API_KEY=sk-aaaaaaaaaaaaaaaaaaaaaaaa");
   const dir = join(config.dataDir, "jobs", "a__b__7");
   mkdirSync(dir, { recursive: true });
-  symlinkSync(secret, join(dir, "claude.err"));
-  writeFileSync(join(dir, "claude.jsonl"), result({ result: "Token war sk-ant-oat01-AUCHGEHEIM" }));
+  symlinkSync(secret, join(dir, "agent.err"));
+  writeFileSync(join(dir, "agent.jsonl"), result({ text: "Token war sk-bbbbbbbbbbbbbbbbbbbbbbbb" }));
   calls.length = 0;
   await finish(config, { name: "x", repo: "a/b", issue: 7, phase: "build", mode: "new", running: false,
     startedAt: "2026-11-11T10:00:00Z", finishedAt: "2026-11-11T10:05:00Z", exitCode: 1 });
   const posted = calls.map((x) => x.stdin).join("\n");
-  assert.ok(!posted.includes("GEHEIM"));
+  assert.ok(!posted.includes("sk-aaaa"));
+  assert.ok(!posted.includes("sk-bbbb"));
+  assert.ok(!posted.includes("DEEPSEEK_API_KEY=sk-"));
 });

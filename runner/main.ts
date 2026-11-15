@@ -1,6 +1,6 @@
 // Software Factory – Runner
 // Läuft dauerhaft auf dem Server. Holt GitHub Issues mit dem Label "factory",
-// startet pro Issue einen Docker-Container mit Claude Code und hält Labels und Board aktuell.
+// startet pro Issue einen Docker-Container mit dem DeepSeek Harness (DSH) und hält Labels und Board aktuell.
 // Er schreibt selbst nie Code. Das macht der Agent im Container.
 
 import {
@@ -73,7 +73,7 @@ function log(event: string, data: Record<string, unknown> = {}) {
 export function loadConfig(path = CONFIG_PATH): Config {
   const c = JSON.parse(readFileSync(path, "utf8"));
   return {
-    label: "factory", maxParallel: 2, model: "opus", workflow: "starter-kit", pollSeconds: 60,
+    label: "factory", maxParallel: 2, model: "deepseek-flash", workflow: "starter-kit", pollSeconds: 60,
     jobTimeoutMinutes: 90, image: "software-factory-job:latest", dataDir: "/var/lib/software-factory",
     containerMemory: "3g", maxReworks: 2, ...c,
   };
@@ -136,9 +136,9 @@ const readJobJson = (path: string, maxBytes = 200_000): any => {
 /** Entfernt Zugangsdaten aus Texten, bevor sie öffentlich in GitHub landen. */
 export function redact(text: string): string {
   return text
-    .replace(/sk-ant-[A-Za-z0-9_-]+/g, "[Zugangsdaten entfernt]")
+    .replace(/\b(sk-ant-[A-Za-z0-9_-]+|sk-[A-Za-z0-9]{20,})\b/g, "[Zugangsdaten entfernt]")
     .replace(/\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[Zugangsdaten entfernt]")
-    .replace(/(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|GH_TOKEN|GITHUB_TOKEN)=\S+/g, "$1=[entfernt]");
+    .replace(/(DEEPSEEK_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|GH_TOKEN|GITHUB_TOKEN)=\S+/g, "$1=[entfernt]");
 }
 
 // ---------- Dauerhafter Zustand pro Issue (nur für den Runner) ----------
@@ -326,7 +326,7 @@ export function buildPrompt(cfg: Config, repo: string, issue: Issue, phase: Phas
     ...(extra ? [`- ${extra}`] : []),
     ``, `## Issue: ${issue.title}`, ``, issue.body || "_(kein Text)_",
     ``, `## Verlauf`, ``, comments || "_(keine Kommentare)_",
-    ``, `Folge dem Factory-Playbook aus deinem System-Prompt. ${start}`,
+    ``, `Folge dem Factory-Playbook (AGENTS.md). ${start}`,
   ].join("\n");
 }
 
@@ -370,7 +370,6 @@ async function launch(cfg: Config, repo: string, issue: Issue, phase: Phase, mod
   await syncBoard(cfg, issue.url, status);
 
   const ghToken = (await gh(["auth", "token"])).trim();
-  const authVar = process.env.CLAUDE_CODE_OAUTH_TOKEN ? "CLAUDE_CODE_OAUTH_TOKEN" : "ANTHROPIC_API_KEY";
   await docker(["rm", "-f", name]).catch(() => {});
   await docker([
     "run", "-d", "--name", name,
@@ -378,10 +377,10 @@ async function launch(cfg: Config, repo: string, issue: Issue, phase: Phase, mod
     ...agentLimits(cfg),
     "-e", `REPO=${repo}`, "-e", `ISSUE=${issue.number}`, "-e", `BRANCH=factory/${issue.number}`,
     "-e", `MODEL=${cfg.model}`, "-e", `WORKFLOW=${cfg.workflow}`, "-e", `PHASE=${phase}`,
-    "-e", "GH_TOKEN", "-e", authVar, // Werte kommen aus der Umgebung, nicht aus der Kommandozeile
+    "-e", "GH_TOKEN", "-e", "DEEPSEEK_API_KEY", // Werte kommen aus der Umgebung, nicht aus der Kommandozeile
     "-v", `${dir}:/work`, ...scenarioMount,
     await imageFor(cfg, repo),
-  ], { GH_TOKEN: ghToken });
+  ], { GH_TOKEN: ghToken, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? "" });
   log("job:started", { repo, issue: issue.number, phase, mode, container: name });
 }
 
@@ -410,8 +409,18 @@ async function finish(cfg: Config, c: Container, reason?: string) {
   const dir = jobDir(cfg, c.repo, c.issue);
   const status: { status?: string; step?: string; pr?: string; unresolved?: boolean } = readJobJson(join(dir, "status.json")) ?? {};
   let result: any = {};
-  const tail = readJobFile(join(dir, "claude.jsonl"), 500_000) ?? "";
-  try { result = JSON.parse(tail.trim().split("\n").pop() ?? ""); } catch {}
+  const tail = readJobFile(join(dir, "agent.jsonl"), 500_000) ?? "";
+  // DSH schreibt NDJSON; das letzte `final`-Event trägt die Antwort. Fehlt es, zählt Exit-Code + status.json.
+  for (const line of tail.trim().split("\n").reverse()) {
+    try {
+      const event = JSON.parse(line);
+      if (event?.type === "final") {
+        const kind = event.reason?.kind;
+        result = { result: event.text, is_error: kind ? kind !== "completed" : false };
+        break;
+      }
+    } catch {}
+  }
 
   const endStates: Record<Phase, string[]> = {
     check: ["approved", "question", "rejected", "failed"],
@@ -420,7 +429,7 @@ async function finish(cfg: Config, c: Container, reason?: string) {
   };
   let problem = reason ?? null;
   if (!problem && !(status.status && endStates[c.phase].includes(status.status))) problem = "Der Lauf hat kein Ergebnis gemeldet.";
-  if (!problem && (c.exitCode !== 0 || result.is_error)) problem = `Claude Code wurde mit einem Fehler beendet (Exit-Code ${c.exitCode}).`;
+  if (!problem && (c.exitCode !== 0 || result.is_error)) problem = `DeepSeek Harness wurde mit einem Fehler beendet (Exit-Code ${c.exitCode}).`;
   if (!problem && c.phase === "build" && status.status === "accepting") problem = await checkBuild(c.repo, c.issue, dir, status.pr);
   const ended = !problem;
   const metricStatus = ended ? (status.status === "review" && status.unresolved ? "unresolved" : status.status) : "failed";
@@ -430,7 +439,7 @@ async function finish(cfg: Config, c: Container, reason?: string) {
     minutes: result.duration_ms ? Math.round(result.duration_ms / 60000) : null,
     turns: result.num_turns ?? null, costUsd: result.total_cost_usd ?? null,
   });
-  const errTail = redact(readJobFile(join(dir, "claude.err"), 1500) ?? "");
+  const errTail = redact(readJobFile(join(dir, "agent.err"), 1500) ?? "");
   // Kurze Zusammenfassung des Laufs dauerhaft festhalten: Grundlage für den Verbesserungs-Lauf
   try {
     const runsDir = join(cfg.dataDir, "runs");
@@ -629,12 +638,11 @@ async function maybeImprove(cfg: Config, freeSlots: number) {
   if (!existsSync(metrics)) writeFileSync(metrics, "");
   chownSync(work, CONTAINER_UID, CONTAINER_UID);
   const ghToken = (await gh(["auth", "token"])).trim();
-  const authVar = process.env.CLAUDE_CODE_OAUTH_TOKEN ? "CLAUDE_CODE_OAUTH_TOKEN" : "ANTHROPIC_API_KEY";
   await docker(["run", "-d", "--name", "sf-improve", "--label", "sf.improve=1",
     ...agentLimits(cfg),
-    "-e", `REPO=${cfg.factoryRepo}`, "-e", `MODEL=${cfg.model}`, "-e", "GH_TOKEN", "-e", authVar,
+    "-e", `REPO=${cfg.factoryRepo}`, "-e", `MODEL=${cfg.model}`, "-e", "GH_TOKEN", "-e", "DEEPSEEK_API_KEY",
     "-v", `${work}:/work`, "-v", `${runs}:/data/runs:ro`, "-v", `${metrics}:/data/metrics.jsonl:ro`,
-    "--entrypoint", "/factory/improve.sh", cfg.image], { GH_TOKEN: ghToken });
+    "--entrypoint", "/factory/improve.sh", cfg.image], { GH_TOKEN: ghToken, DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? "" });
   log("improve:started", { repo: cfg.factoryRepo });
 }
 
@@ -778,12 +786,9 @@ async function tick(cfg: Config) {
 async function main() {
   const once = process.argv.includes("--once");
   let cfg = loadConfig();
-  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN && !process.env.ANTHROPIC_API_KEY) {
-    log("config:error", { error: "Weder CLAUDE_CODE_OAUTH_TOKEN noch ANTHROPIC_API_KEY gesetzt" });
+  if (!process.env.DEEPSEEK_API_KEY) {
+    log("config:error", { error: "DEEPSEEK_API_KEY ist nicht gesetzt (DeepSeek Platform → API Keys)" });
     process.exit(1);
-  }
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN && process.env.ANTHROPIC_API_KEY) {
-    log("config:warning", { warning: "Beide Login-Arten gesetzt. Es wird nur CLAUDE_CODE_OAUTH_TOKEN an die Jobs gegeben." });
   }
   CONTAINER_UID = Number((await docker(["run", "--rm", "--entrypoint", "id", cfg.image, "-u"])).trim());
   FACTORY_LOGIN = (await gh(["api", "user", "--jq", ".login"])).trim();
@@ -791,7 +796,8 @@ async function main() {
   log("runner:started", {
     login: FACTORY_LOGIN, allowedUsers: cfg.allowedUsers ?? [],
     preview: cfg.preview ? previewLink(cfg, 1).replace(/:4001$/, ":4001…") : "aus",
-    containerUid: CONTAINER_UID, repos: cfg.repos, maxParallel: cfg.maxParallel, model: cfg.model, workflow: cfg.workflow,
+    containerUid: CONTAINER_UID, repos: cfg.repos, maxParallel: cfg.maxParallel,
+    harness: "dsh", provider: "deepseek-official", model: cfg.model, workflow: cfg.workflow,
   });
   while (true) {
     try {
