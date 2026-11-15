@@ -1,21 +1,37 @@
 #!/usr/bin/env bash
-# Startet einen Factory-Job: Repo holen, Branch auschecken, Claude Code mit Playbook laufen lassen.
-# Erwartet: REPO, ISSUE, BRANCH, MODEL, WORKFLOW, GH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN (oder ANTHROPIC_API_KEY)
+# Startet einen Factory-Job: Repo holen, Branch auschecken, DeepSeek Harness (DSH) mit Playbook laufen lassen.
+# Erwartet: REPO, ISSUE, BRANCH, MODEL, WORKFLOW, GH_TOKEN, DEEPSEEK_API_KEY
 # und /work/prompt.md (vom Runner geschrieben).
 set -euo pipefail
 
 log() { echo "[factory] $*"; }
 
 : "${REPO:?}" "${ISSUE:?}" "${BRANCH:?}"
-MODEL="${MODEL:-opus}"
+MODEL="${MODEL:-deepseek-flash}"
 export PHASE="${PHASE:-build}"   # check = prüfen, build = entwickeln, accept = unabhängige Abnahme
 WORKFLOW="${WORKFLOW:-starter-kit}"
+DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+export DSH_HOME
 
-# Workflow-Skills als Nutzer-Skills bereitstellen (landen nicht im Ziel-Repo)
-mkdir -p "$HOME/.claude/skills"
+# Workflow-Skills als DSH-Skills bereitstellen (landen nicht im Ziel-Repo)
+mkdir -p "$DSH_HOME/skills"
 if [ -d "/factory/workflows/$WORKFLOW/skills" ]; then
-  cp -r "/factory/workflows/$WORKFLOW/skills/." "$HOME/.claude/skills/"
+  cp -r "/factory/workflows/$WORKFLOW/skills/." "$DSH_HOME/skills/"
 fi
+# Playbook als dauerhafte Workspace-Instruktion (DSH lädt es in den ersten Request)
+cp /factory/playbook.md "$DSH_HOME/AGENTS.md"
+
+# Modell für diesen Lauf: kleine Patch-Datei überschreibt den Profil-Default.
+case "$MODEL" in
+  ""|*[!a-zA-Z0-9._-]*) echo "Ungültiges Modell: '$MODEL'" >&2; exit 2 ;;
+esac
+printf -- '- id: agent-default-model\n  config:\n    provider: deepseek-official\n    model: %s\n' "$MODEL" > /work/dsh-model.yml
+
+# Caches im Workspace halten: die DSH-Datei-Sandbox erlaubt Schreibzugriffe nur dort.
+export npm_config_cache="${npm_config_cache:-/work/.npm}"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-/work/.uv}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/work/.cache}"
+mkdir -p "$npm_config_cache" "$UV_CACHE_DIR" "$XDG_CACHE_HOME"
 
 gh auth setup-git >/dev/null
 GH_LOGIN=$(gh api user --jq .login)
@@ -50,17 +66,17 @@ if [ "$PHASE" != "check" ] && [ -f .factory/setup.json ]; then
 fi
 
 export FACTORY_DEFAULT_BRANCH="$DEFAULT_BRANCH"
-log "Starte Claude Code ($MODEL, Phase: $PHASE, Workflow: $WORKFLOW) für $REPO#$ISSUE auf $BRANCH"
+
+ARGS=(--profile headless --patch /work/dsh-model.yml
+  --permission-mode workspace-write --approval-policy never
+  --add-dir /work --add-dir /factory)
+if [ -d /scenarios ]; then ARGS+=(--add-dir /scenarios); fi
+
+log "Starte DeepSeek Harness ($MODEL, Phase: $PHASE, Workflow: $WORKFLOW) für $REPO#$ISSUE auf $BRANCH"
 set +e
-claude -p "$(cat /work/prompt.md)" \
-  --append-system-prompt-file /factory/playbook.md \
-  --add-dir "/factory/workflows/$WORKFLOW" \
-  --model "$MODEL" \
-  --dangerously-skip-permissions \
-  --output-format stream-json --verbose \
-  > /work/claude.jsonl 2> /work/claude.err
+dsh "${ARGS[@]}" --json - < /work/prompt.md > /work/agent.jsonl 2> /work/agent.err
 CODE=$?
 set -e
-log "Claude Code beendet mit Exit-Code $CODE"
-tail -n 1 /work/claude.jsonl | jq -r '"Ergebnis: " + ((.result // "-") | tostring | .[0:500])' 2>/dev/null || true
+log "DeepSeek Harness beendet mit Exit-Code $CODE"
+tail -n 1 /work/agent.jsonl | jq -r 'select(.type == "final") | "Ergebnis: " + ((.text // "-") | tostring | .[0:500])' 2>/dev/null || true
 exit $CODE

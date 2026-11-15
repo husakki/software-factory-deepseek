@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Startet die App eines PR-Branches als Vorschau (Port 3000 im Container).
 # Der Runner holt den Quellcode vorher nach /app. Dieser Container bekommt keine Zugangsdaten:
-# Installationsskripte und App-Code können weder GitHub noch Claude erreichen.
+# Installationsskripte und App-Code können weder GitHub noch DeepSeek erreichen.
 set -euo pipefail
 cd /app
 
